@@ -7,6 +7,7 @@ let
 
     DeltaTableVersion = if DeltaTableOptions = null then null else Record.FieldOrDefault(DeltaTableOptions, "Version", null),
     PartitionFilterFunction = if DeltaTableOptions = null then (x) => true else Record.FieldOrDefault(DeltaTableOptions, "PartitionFilterFunction", (x) => true),
+    UseFileBuffer = if DeltaTableOptions = null then false else Record.FieldOrDefault(DeltaTableOptions, "UseFileBuffer", false),
 
     DeltaTableFolderContent_wFullPath = 
     let
@@ -37,9 +38,10 @@ let
         #"Filtered Rows" = Table.SelectRows(Source, each Text.Contains([Full_Path], Delimiter & "_delta_log" & Delimiter)),
         #"Added Version" = Table.AddColumn(#"Filtered Rows", "Version", each try Int64.From(Text.BeforeDelimiter([File_Name], ".")) otherwise -1, Int64.Type),
         #"Filtered RequestedVersion" = if DeltaTableVersion = null then #"Added Version" else Table.SelectRows(#"Added Version", each [Version] <= DeltaTableVersion),
-        buffered = Table.Buffer(#"Filtered RequestedVersion")
+        BufferedTable = Table.Buffer(#"Filtered RequestedVersion"),
+        BufferedContent = Table.TransformColumns(BufferedTable,{{"Content", Binary.Buffer}})
     in
-        buffered,
+        BufferedContent,
 
     #"DeltaTablePath" = 
     let
@@ -152,7 +154,7 @@ let
         #"Buffered Fields",
 
     #"Data" = 
-    let
+        let
         Source = #"Logs ALL",
         #"Added Counter" = Table.AddColumn(Source, "Counter", each if [remove] <> null then -1 else if [add] <> null then 1 else null, Int8.Type),
         #"Added file_name" = Table.AddColumn(#"Added Counter", "file_name", each if [add] <> null then Record.Field([add], "path") else if [remove] <> null then Record.Field([remove], "path") else null, Text.Type),
@@ -171,7 +173,8 @@ let
         #"Merged Queries" = Table.NestedJoin(#"Buffered RelevantFiles", {"Full_Path"}, DeltaTableFolderContent_wFullPath, {"Full_Path"}, "DeltaTable Folder", JoinKind.Inner),
         #"Removed Columns" = Table.RemoveColumns(#"Merged Queries",{"Full_Path"}),
         #"Expanded DeltaTable Folder" = Table.ExpandTableColumn(#"Removed Columns", "DeltaTable Folder", {"Content"}, {"Content"}),
-        #"Added Custom1" = Table.AddColumn(#"Expanded DeltaTable Folder", "Data", each Parquet.Document([Content]), Expression.Evaluate("type table [" & Text.Combine(metadata_columns[TableDataType], ", ") & "]", #shared)),
+        BufferFile = if UseFileBuffer then Table.TransformColumns(#"Expanded DeltaTable Folder",{{"Content", Binary.Buffer}}) else #"Expanded DeltaTable Folder",
+        #"Added Custom1" = Table.AddColumn(BufferFile, "Data", each Parquet.Document([Content]), Expression.Evaluate("type table [" & Text.Combine(metadata_columns[TableDataType], ", ") & "]", #shared)),
         #"Removed Columns1" = Table.RemoveColumns(#"Added Custom1",{"Content"}),
         #"Expanded Data" = Table.ExpandTableColumn(#"Removed Columns1", "Data", Table.SelectRows(metadata_columns, each not [isPartitionedBy])[name]),
         #"Reordered Columns" = Table.ReorderColumns(#"Expanded Data", metadata_columns[name])

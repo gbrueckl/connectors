@@ -44,6 +44,7 @@ These are all returned by default for common Storage connectors like Azure Data 
 ## Parameter DeltaTableOptions
 An optional record that be specified to control the following options:
 - `Version` - a numeric value that defines historic specific version of the Delta Lake table you want to read. This is similar to specifying `VERSION AS OF` when querying the Delta Lake table via SQL. Default is the most recent/current version.
+- `UseFileBuffer` - some data sources do not support streaming of binary files and you may receive an error message like **"Parquet.Document cannot be used with streamed binary values."**. To mitigate this issue, you can set `UseFileBuffer=true`. Details about this issue and implications are desribed [here](https://blog.crossjoin.co.uk/2021/03/07/parquet-files-in-power-bi-power-query-and-the-streamed-binary-values-error/)
 - `PartitionFilterFunction` - a fuction that is used to filter out partitions before actually reading the files. The function has to take 1 parameter of type `record` and must return a `logical` type (true/false). The record that is passed in can then be used to specify the partition filter. For each file in the delta table the metadata is checked against this function. If it is not matched, it is discarded from the final list of files that make up the Delta Lake table.
 Assuming your Delta Lake table is partitioned by Year and Month and you want to filter for `Year=2021` and `Month="Jan"` your function may look like this:
 ```
