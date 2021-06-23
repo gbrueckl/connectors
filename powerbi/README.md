@@ -3,12 +3,14 @@ The provided PowerQuery/M function allows you to read a Delta Lake table directl
 
 # Features
 - Read Delta Lake table into PowerBI without having a cluster (Spark, Databricks, Azure Synapse) up and running
+- Online/Scheduled Refresh in the PowerBI service 
 - Support all storage systems that are supported by PowerBI
     - Azure Data Lake Store (tested)
     - Azure Blob Storage (tested)
     - Local Folder or Network Share (tested)
     - AWS S3 (not yet tested)
-- Support for Partition Elimination to leverage the partitioning scheme of the Delta Lake table
+    - Local Hadoop / HDFS (partially tested, check `UseFileBuffer` option)
+- Support for Partition Elimination to leverage the partitioning schema of the Delta Lake table
 - Support for Delta Lake time travel - e.g. `VERSION AS OF`
 
 # Usage
@@ -35,7 +37,7 @@ The function supports two parameters of which the second is optional:
 
 
 ## Parameter DeltaTableFolderContent
-A table that contains a file/folder listing of your Delta Lake table. Power BI supports a wide set of storage services which you can use for this. There are however some mandatory things this file/folder listing has to cotain:
+A table that contains a file/folder listing of your Delta Lake table. PowerBI supports a wide set of storage services which you can use for this. There are however some mandatory things this file/folder listing has to cotain:
 - a sub-folder `_delta_log` (which holds the Delta Log files and also ensures that the parent folder is the root of the Delta Lake table)
 - mandatory columns `Name`, `Folder Path`, `Content`, `Extension`
 - a column called `file_name`
