@@ -108,7 +108,7 @@ in
 To read diretly from an Azure Data Lake Store Gen1 folder, you need to specify the options `UseFileBuffer=true` and `IterateFolderContent=true`:
 ```
 let
-    Source = DataLake.Contents("adl://myadlsgen1.azuredatalakestore.net/DeltaSamples/FactInternetSales_part.delta", [PageSize=null])
+    Source = DataLake.Contents("adl://myadlsgen1.azuredatalakestore.net/DeltaSamples/FactInternetSales_part.delta", [PageSize=null]),
     DeltaTable = fn_ReadDeltaTable(Source, [UseFileBuffer = true, IterateFolderContent = true])
 in
     DeltaTable
