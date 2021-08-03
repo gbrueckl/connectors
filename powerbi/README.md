@@ -67,6 +67,7 @@ or even more lightweight
 It supports all possible variations that are supported by Power Query/M so you can also build complex partition filters.
 - `IterateFolderContent` - some data sources (like Azure Data Lake Store Gen1) do not automatically expand all sub-folders to get the single files. To make the function work with those data sources you can set `IterateFolderContent=true`. 
 Please be aware that this option can have negative performance impact!
+- `TimeZoneOffset` - Apache Parquet has no built-in data type for timestamps with offset hence all timestamps are stored physically as UTC. As Delta Lake is also based on Apache Parquet, this also applies here. So, to explicitly change the timezone for all timestamps that are read from the Delta Lake table, you can use `TimeZoneOffset="+02:00"`. The resulting columns will then be of type DateTimeZone with the offset of `+02:00` and the DateTime-value shifted by +2 hours. The parameter supports the following format only: [+|-][HH:mm]
 - additional options may be added in the future!
 
 # Known limitations

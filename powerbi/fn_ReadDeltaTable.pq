@@ -10,6 +10,8 @@ let
     PartitionFilterFunction = if DeltaTableOptions = null then (x) => true else if Record.FieldOrDefault(DeltaTableOptions, "PartitionFilterFunction", null) = null then (x) => true else Record.Field(DeltaTableOptions, "PartitionFilterFunction"),
     UseFileBuffer = if DeltaTableOptions = null then false else if Record.FieldOrDefault(DeltaTableOptions, "UseFileBuffer", null) = null then false else Record.Field(DeltaTableOptions, "UseFileBuffer"),
     IterateFolderContent = if DeltaTableOptions = null then false else if Record.FieldOrDefault(DeltaTableOptions, "IterateFolderContent", null) = null then false else Record.Field(DeltaTableOptions, "IterateFolderContent"),
+    TimeZoneOffset = if DeltaTableOptions = null then null else Record.FieldOrDefault(DeltaTableOptions, "TimeZoneOffset", null),
+    TimeZoneOffsetDuration = Duration.FromText(Text.TrimStart(TimeZoneOffset, "+")),
 
     Delimiter = if Text.Contains(DeltaTableFolderContent{0}[Folder Path], "//") then "/" else "\",
 
@@ -191,15 +193,16 @@ let
         else if [type] = "double" then [PBI_DataType=Double.Type, PBI_Text="Double.Type", PBI_Transformation=Double.From]
         else if [type] = "string" then [PBI_DataType=Text.Type, PBI_Text="Text.Type", PBI_Transformation=Text.From]
         else if [type] = "date" then [PBI_DataType=Date.Type, PBI_Text="Date.Type", PBI_Transformation=Date.From]
-        else if [type] = "timestamp" then [PBI_DataType=DateTime.Type, PBI_Text="DateTime.Type", PBI_Transformation=DateTime.From]
+        else if [type] = "timestamp" and TimeZoneOffset = null then [PBI_DataType=DateTime.Type, PBI_Text="DateTime.Type", PBI_Transformation=DateTime.From]
+        else if [type] = "timestamp" and TimeZoneOffset <> null then [PBI_DataType=DateTimeZone.Type, PBI_Text="DateTimeZone.Type", PBI_Transformation=(x) as nullable datetimezone => DateTime.AddZone(x + TimeZoneOffsetDuration, Duration.Hours(TimeZoneOffsetDuration), Duration.Minutes(TimeZoneOffsetDuration))]
         else if [type] = "boolean" then [PBI_DataType=Logical.Type, PBI_Text="Logical.Type", PBI_Transformation=Logical.From]
         else if [type] = "binary" then [PBI_DataType=Binary.Type, PBI_Text="Binary.Type", PBI_Transformation=Binary.From]
-        else if [type] = "null" then [PBI_DataType=Any.Type, PBI_Text="Any.Type", PBI_Transformation=(x) => x]
+        else if [type] = "null" then [PBI_DataType=Any.Type, PBI_Text="Any.Type", PBI_Transformation=(x) as any => x]
         else if Text.StartsWith([type], "decimal") then [PBI_DataType=Number.Type, PBI_Text="Number.Type", PBI_Transformation=Number.From]
-        else [PBI_DataType=Any.Type, PBI_Text="Any.Type", PBI_Transformation=(x) => x]),
+        else [PBI_DataType=Any.Type, PBI_Text="Any.Type", PBI_Transformation=(x) as any => x]),
             #"Expanded PBI_DataType" = Table.ExpandRecordColumn(#"Added PBI_DataType", "PBI_DataType", {"PBI_DataType", "PBI_Text", "PBI_Transformation"}, {"PBI_DataType", "PBI_Text", "PBI_Transformation"}),
             #"Added ChangeDataType" = Table.AddColumn(#"Expanded PBI_DataType", "ChangeDataType", each {[name], [PBI_DataType]}, type list),
-            #"Added TableDataType" = Table.AddColumn(#"Added ChangeDataType", "TableDataType", each [name] & "=" & (if [nullable] then "nullable " else "") & Text.From([PBI_Text]), type text),
+            #"Added TableDataType" = Table.AddColumn(#"Added ChangeDataType", "TableDataType", each "#""" & [name] & """=" & (if [nullable] then "nullable " else "") & Text.From([PBI_Text]), type text),
             #"Added ColumnTransformation" = Table.AddColumn(#"Added TableDataType", "ColumnTransformation", each {[name], [PBI_Transformation]}, type list),
             #"Buffered Fields" = Table.Buffer(#"Added ColumnTransformation")
         in
@@ -229,7 +232,8 @@ let
             #"Added Custom1" = Table.AddColumn(BufferFile, "Data", each Parquet.Document([Content]), Expression.Evaluate("type table [" & Text.Combine(metadata_columns[TableDataType], ", ") & "]", PQ_DataTypes)),
             #"Removed Columns1" = Table.RemoveColumns(#"Added Custom1",{"Content"}),
             #"Expanded Data" = Table.ExpandTableColumn(#"Removed Columns1", "Data", Table.SelectRows(metadata_columns, each not [isPartitionedBy])[name]),
-            #"Reordered Columns" = Table.ReorderColumns(#"Expanded Data", metadata_columns[name])
+            #"Changed Type" = Table.TransformColumns(#"Expanded Data",Table.SelectRows(metadata_columns, each [type] = "timestamp")[ColumnTransformation]),
+            #"Reordered Columns" = Table.ReorderColumns(if TimeZoneOffset = null then #"Expanded Data" else #"Changed Type", metadata_columns[name])
         in
             #"Reordered Columns"
 
