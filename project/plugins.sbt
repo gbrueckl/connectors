@@ -1,5 +1,5 @@
 /*
- * Copyright (2020) The Delta Lake Project Authors.
+ * Copyright (2020-present) The Delta Lake Project Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,10 +26,14 @@ addSbtPlugin("net.virtual-void" % "sbt-dependency-graph" % "0.10.0-RC1")
 
 addSbtPlugin("com.eed3si9n" % "sbt-unidoc" % "0.4.2")
 
-// changing this to addSbtPlugin("com.github.sbt" % "sbt-pgp" % "2.1.2")
-// will cause issues with release
-addSbtPlugin("com.jsuereth" % "sbt-pgp" % "1.0.0")
+addSbtPlugin("com.jsuereth" % "sbt-pgp" % "1.1.0")
 
 addSbtPlugin("org.xerial.sbt" % "sbt-sonatype" % "2.3")
 
-addSbtPlugin("com.typesafe" % "sbt-mima-plugin" % "0.3.0")
+addSbtPlugin("com.typesafe" % "sbt-mima-plugin" % "1.0.1")
+
+addSbtPlugin("com.etsy" % "sbt-checkstyle-plugin" % "3.1.1")
+
+// By default, sbt-checkstyle-plugin uses checkstyle version 6.15, but we should set it to use the
+// same version as Spark OSS (8.29)
+dependencyOverrides += "com.puppycrawl.tools" % "checkstyle" % "8.29"

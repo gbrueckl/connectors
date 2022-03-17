@@ -21,7 +21,7 @@
  */
 
 /*
- * Copyright (2020) The Delta Lake Project Authors.
+ * Copyright (2020-present) The Delta Lake Project Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,17 +47,7 @@ public final class StructField {
     private final String name;
     private final DataType dataType;
     private final boolean nullable;
-
-    /**
-     * @param name  the name of this field
-     * @param dataType  the data type of this field
-     * @param nullable  indicates if values of this field can be {@code null} values
-     */
-    public StructField(String name, DataType dataType, boolean nullable) {
-        this.name = name;
-        this.dataType = dataType;
-        this.nullable = nullable;
-    }
+    private final FieldMetadata metadata;
 
     /**
      * Constructor with default {@code nullable = true}.
@@ -67,6 +57,28 @@ public final class StructField {
      */
     public StructField(String name, DataType dataType) {
         this(name, dataType, true);
+    }
+
+    /**
+     * @param name  the name of this field
+     * @param dataType  the data type of this field
+     * @param nullable  indicates if values of this field can be {@code null} values
+     */
+    public StructField(String name, DataType dataType, boolean nullable) {
+        this(name, dataType, nullable, FieldMetadata.builder().build());
+    }
+
+    /**
+     * @param name  the name of this field
+     * @param dataType  the data type of this field
+     * @param nullable  indicates if values of this field can be {@code null} values
+     * @param metadata  metadata for this field
+     */
+    public StructField(String name, DataType dataType, boolean nullable, FieldMetadata metadata) {
+        this.name = name;
+        this.dataType = dataType;
+        this.nullable = nullable;
+        this.metadata = metadata;
     }
 
     /**
@@ -91,11 +103,19 @@ public final class StructField {
     }
 
     /**
+     * @return the metadata for this field
+     */
+    public FieldMetadata getMetadata() {
+        return metadata;
+    }
+
+    /**
      * Builds a readable {@code String} representation of this {@code StructField}.
      */
     protected void buildFormattedString(String prefix, StringBuilder builder) {
         final String nextPrefix = prefix + "    |";
-        builder.append(String.format("%s-- %s: %s (nullable = %b)\n", prefix, name, dataType.getTypeName(), nullable));
+        builder.append(String.format("%s-- %s: %s (nullable = %b) (metadata =%s)\n",
+                prefix, name, dataType.getTypeName(), nullable, metadata.toString()));
         DataType.buildFormattedString(dataType, nextPrefix, builder);
     }
 
@@ -104,11 +124,12 @@ public final class StructField {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         StructField that = (StructField) o;
-        return name.equals(that.name) && dataType.equals(that.dataType) && nullable == that.nullable;
+        return name.equals(that.name) && dataType.equals(that.dataType) && nullable == that.nullable
+                && metadata.equals(that.metadata);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, dataType, nullable);
+        return Objects.hash(name, dataType, nullable, metadata);
     }
 }

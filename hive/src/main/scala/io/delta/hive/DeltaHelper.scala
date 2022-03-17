@@ -1,5 +1,5 @@
 /*
- * Copyright (2020) The Delta Lake Project Authors.
+ * Copyright (2020-present) The Delta Lake Project Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,19 +25,20 @@ import scala.collection.mutable
 import scala.util.control.NonFatal
 
 import com.google.common.cache.{Cache, CacheBuilder}
-import io.delta.standalone.actions.AddFile
-import io.delta.standalone.types._
-import io.delta.standalone.{DeltaLog, Snapshot}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{BlockLocation, FileStatus, FileSystem, LocatedFileStatus, Path}
 import org.apache.hadoop.hive.metastore.api.MetaException
 import org.apache.hadoop.hive.ql.exec.{ExprNodeEvaluatorFactory, SerializationUtilities}
 import org.apache.hadoop.hive.ql.plan.{ExprNodeGenericFuncDesc, TableScanDesc}
-import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory
 import org.apache.hadoop.hive.serde2.objectinspector.{ObjectInspector, ObjectInspectorConverters, ObjectInspectorFactory, PrimitiveObjectInspector}
+import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory
 import org.apache.hadoop.hive.serde2.typeinfo._
 import org.apache.hadoop.mapred.JobConf
 import org.slf4j.LoggerFactory
+
+import io.delta.standalone.{DeltaLog, Snapshot}
+import io.delta.standalone.actions.AddFile
+import io.delta.standalone.types._
 
 object DeltaHelper {
 
@@ -77,7 +78,7 @@ object DeltaHelper {
     val files = prunePartitions(
         job.get(TableScanDesc.FILTER_EXPR_CONF_STR),
         partitionColumnWithIndex.map(_._1),
-        snapshotToUse.getAllFiles.asScala
+        snapshotToUse.getAllFiles.asScala.toSeq
       ).map { addF =>
         // Drop unused potential huge fields
         val f = AddFile.builder(
@@ -110,7 +111,7 @@ object DeltaHelper {
   }
 
   def getPartitionCols(hadoopConf: Configuration, rootPath: Path): Seq[String] = {
-    loadDeltaLatestSnapshot(hadoopConf, rootPath).getMetadata.getPartitionColumns.asScala
+    loadDeltaLatestSnapshot(hadoopConf, rootPath).getMetadata.getPartitionColumns.asScala.toSeq
   }
 
   def loadDeltaLatestSnapshot(hadoopConf: Configuration, rootPath: Path): Snapshot = {

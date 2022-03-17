@@ -1,54 +1,32 @@
 # <img src="https://docs.delta.io/latest/_static/delta-lake-white.png" width="150" alt="Delta Lake Logo"></img> Connectors
 
-[![CircleCI](https://circleci.com/gh/delta-io/connectors/tree/master.svg?style=svg)](https://circleci.com/gh/delta-io/connectors/tree/master)
+[![Test](https://github.com/delta-io/connectors/actions/workflows/test.yaml/badge.svg)](https://github.com/delta-io/connectors/actions/workflows/test.yaml)
+[![License](https://img.shields.io/badge/license-Apache%202-brightgreen.svg)](https://github.com/delta-io/connectors/blob/master/LICENSE.txt)
 
 We are building connectors to bring [Delta Lake](https://delta.io) to popular big-data engines outside [Apache Spark](https://spark.apache.org) (e.g., [Apache Hive](https://hive.apache.org/), [Presto](https://prestodb.io/)) and also to common reporting tools like [Microsoft Power BI](https://powerbi.microsoft.com/).
 
 # Introduction
 
-This is the repository for Delta Lake Connectors. It includes a library for querying Delta Lake metadata and connectors to popular big-data engines (e.g., [Apache Hive](https://hive.apache.org/), [Presto](https://prestodb.io/)) and to common reporting tools like [Microsoft Power BI](https://powerbi.microsoft.com/). Please refer to the main [Delta Lake](https://github.com/delta-io/delta) repository if you want to learn more about the Delta Lake project.
+This is the repository for Delta Lake Connectors. It includes
+- [Delta Standalone](https://docs.delta.io/latest/delta-standalone.html): a native library for reading and writing Delta Lake metadata.
+- Connectors to popular big-data engines (e.g., [Apache Hive](https://hive.apache.org/), [Presto](https://prestodb.io/)) and to common reporting tools like [Microsoft Power BI](https://powerbi.microsoft.com/).
 
-# Building
+Please refer to the main [Delta Lake](https://github.com/delta-io/delta) repository if you want to learn more about the Delta Lake project.
 
-The project is compiled using [SBT](https://www.scala-sbt.org/1.x/docs/Command-Line-Reference.html). It has the following subprojects.
+# Delta Standalone
 
-## Delta Standalone Reader
-Delta Standalone Reader is a JVM library to read Delta Lake tables. Unlike https://github.com/delta-io/delta, this project doesn't use Spark to read tables and it has only a few transitive dependencies. It can be used by any application that cannot use a Spark cluster.
+Delta Standalone, formerly known as the Delta Standalone Reader (DSR), is a JVM library to read **and write** Delta Lake tables. Unlike https://github.com/delta-io/delta, this project doesn't use Spark to read or write tables and it has only a few transitive dependencies. It can be used by any application that cannot use a Spark cluster.
 - To compile the project, run `build/sbt standalone/compile`
 - To test the project, run `build/sbt standalone/test`
-- To generate the JAR, run `build/sbt standalone/package`
+- To publish the JAR, run `build/sbt standaloneCosmetic/publishM2`
 
-### How to use it
-You can add the Delta Standalone Reader library as a dependency using your favorite build tool.
+See [Delta Standalone](https://docs.delta.io/latest/delta-standalone.html) for detailed documentation.
 
-#### Maven
-Scala 2.12:
-```xml
-<dependency>
-  <groupId>io.delta</groupId>
-  <artifactId>delta-standalone_2.12</artifactId>
-  <version>0.2.0</version>
-</dependency>
-```
 
-Scala 2.11:
-```xml
-<dependency>
-  <groupId>io.delta</groupId>
-  <artifactId>delta-standalone_2.11</artifactId>
-  <version>0.2.0</version>
-</dependency>
-```
-
-#### SBT
-```
-libraryDependencies += "io.delta" %% "delta-standalone" % "0.2.0"
-```
-
-See [Delta Standalone Reader](https://github.com/delta-io/connectors/wiki/Delta-Standalone-Reader) for more details.
+# Connectors
 
 ## Hive connector
-This project is a library to make Hive read Delta Lake tables. The project provides a uber JAR `delta-hive-assembly_<scala_version>-0.2.0.jar` to use in Hive. You can use either Scala 2.11 or 2.12. The released JARs are available in the [releases](https://github.com/delta-io/connectors/releases) page. Please download the uber JAR for the corresponding Scala version you would like to use.
+This project is a library to make Hive read Delta Lake tables. The project provides a uber JAR `delta-hive-assembly_<scala_version>-0.3.0.jar` to use in Hive. You can use either Scala 2.11 or 2.12. The released JARs are available in the [releases](https://github.com/delta-io/connectors/releases) page. Please download the uber JAR for the corresponding Scala version you would like to use.
 
 You can also use the following instructions to build it as well.
 
@@ -57,21 +35,22 @@ You can also use the following instructions to build it as well.
 Please skip this section if you have downloaded the connector JARs.
 
 - To compile the project, run `build/sbt hive/compile`
-- To test the project, run `build/sbt hive/test`
-- To generate the uber JAR that contains all libraries needed for Hive, run `build/sbt hive/assembly`
+- To run Hive 3 tests, run `build/sbt hiveMR/test hiveTez/test`
+- To run Hive 2 tests, run `build/sbt hive2MR/test hive2Tez/test`
+- To generate the uber JAR that contains all libraries needed for Hive, run `build/sbt hiveAssembly/assembly`
 
 The above commands will generate the following JAR:
 
 ```
-hive/target/scala-2.12/delta-hive-assembly_2.12-0.2.0.jar
+hive/target/scala-2.12/delta-hive-assembly_2.12-0.3.0.jar
 ```
 
 This uber JAR includes the Hive connector and all its dependencies. They need to be put in Hive’s classpath.
 
-Note: if you would like to build using Scala 2.11, you can run the SBT command `build/sbt "++ 2.11.12 hive/assembly"` to generate the following JAR:
+Note: if you would like to build using Scala 2.11, you can run the SBT command `build/sbt "++ 2.11.12 hiveAssembly/assembly"` to generate the following JAR:
 
 ```
-hive/target/scala-2.11/delta-hive-assembly_2.11-0.2.0.jar
+hive/target/scala-2.11/delta-hive-assembly_2.11-0.3.0.jar
 ```
 
 ### Setting up Hive
@@ -138,7 +117,7 @@ You can add an explicit scheme to specify which file system you would like to us
 ### Frequently asked questions (FAQ)
 
 #### Supported Hive versions
-Hive 2.x.
+Hive 2.x and 3.x.
 
 #### Can I use this connector in Apache Spark or Presto?
 No. The connector **must** be used with Apache Hive. It doesn't work in other systems, such as Apache Spark or Presto.
@@ -148,6 +127,9 @@ No. The connector **must** be used with Apache Hive. It doesn't work in other sy
 
 #### If I create a table using the connector in Hive, can I query it in Apache Spark or Presto?
 No. The table created by this connector in Hive cannot be read in any other systems right now. We recommend to create different tables in different systems but point to the same path. Although you need to use different table names to query the same Delta table, the underlying data will be shared by all of systems.
+
+#### If a table in the Hive Metastore is created by other systems such as Apache Spark or Presto, can I use this connector to query it in Hive?
+No. If a table in the Hive Metastore is created by other systems such as Apache Spark or Presto, Hive cannot find the correct connector to read it. You can follow our instruction to [create a new table](#create-a-hive-table) with a different table name but point to the same path in Hive. Although it's a different table name, the underlying data will be shared by all of systems. We recommend to create different tables in different systems but point to the same path.
 
 #### Can I write to a Delta table using this connector?
 No. The connector doesn't support writing to a Delta table.
@@ -166,7 +148,7 @@ The connector supports MapReduce and Tez. It doesn't support Spark execution eng
 
 ## sql-delta-import
 
-[sql-delta-import](/sql-delta-import/readme.md) allows for importing data from a JDBC source into a Delta Lake table
+[sql-delta-import](/sql-delta-import/readme.md) allows for importing data from a JDBC source into a Delta Lake table.
 
 ## Power BI connector
 The connector for [Microsoft Power BI](https://powerbi.microsoft.com/) is basically just a custom Power Query function that allows you to read a Delta Lake table from any file-based [data source supported by Microsoft Power BI](https://docs.microsoft.com/en-us/power-bi/connect-data/desktop-data-sources). Details can be found in the dedicated [README.md](/powerbi/README.md).

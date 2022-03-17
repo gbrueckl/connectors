@@ -8,6 +8,7 @@
 *.swp
 *~
 .DS_Store
+.bsp
 .cache
 .classpath
 .ensime
@@ -102,3 +103,8 @@ spark-warehouse/
 
 # For SBT
 .jvmopts
+
+# For VS
+/.vs
+/obj
+/bin

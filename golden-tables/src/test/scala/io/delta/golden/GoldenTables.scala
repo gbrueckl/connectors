@@ -1,5 +1,5 @@
 /*
- * Copyright (2020) The Delta Lake Project Authors.
+ * Copyright (2020-present) The Delta Lake Project Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,17 +27,16 @@ import scala.language.implicitConversions
 import io.delta.tables.DeltaTable
 import org.apache.commons.io.FileUtils
 import org.apache.hadoop.fs.Path
-
+import org.apache.spark.SparkConf
 import org.apache.spark.network.util.JavaUtils
-import org.apache.spark.sql.delta.{DeltaLog, OptimisticTransaction}
 import org.apache.spark.sql.{QueryTest, Row}
+import org.apache.spark.sql.delta.{DeltaLog, OptimisticTransaction}
 import org.apache.spark.sql.delta.DeltaOperations.ManualUpdate
 import org.apache.spark.sql.delta.actions.{Action, AddCDCFile, AddFile, CommitInfo, JobInfo, Metadata, NotebookInfo, Protocol, RemoveFile, SetTransaction, SingleAction}
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.delta.util.{FileNames, JsonUtils}
 import org.apache.spark.sql.test.SharedSparkSession
 import org.apache.spark.sql.types._
-import org.apache.spark.SparkConf
 
 /**
  * This is a special class to generate golden tables for other projects. Run the following commands
@@ -51,7 +50,7 @@ import org.apache.spark.SparkConf
  * GENERATE_GOLDEN_TABLES=1 build/sbt 'goldenTables/test-only *GoldenTables -- -z tbl_name'
  * ```
  *
- * After generating golden tables, ensure to package or test project standalone, otherwise the
+ * After generating golden tables, be sure to package or test project standalone, otherwise the
  * test resources won't be available when running tests with IntelliJ.
  */
 class GoldenTables extends QueryTest with SharedSparkSession {
@@ -119,7 +118,7 @@ class GoldenTables extends QueryTest with SharedSparkSession {
       val txn = log.startTransaction()
       val file = AddFile(i.toString, Map.empty, 1, 1, true) :: Nil
       val delete: Seq[Action] = if (i > 1) {
-        RemoveFile(i - 1 toString, Some(System.currentTimeMillis()), true) :: Nil
+        RemoveFile((i - 1).toString, Some(System.currentTimeMillis()), true) :: Nil
       } else {
         Nil
       }
@@ -356,20 +355,22 @@ class GoldenTables extends QueryTest with SharedSparkSession {
     assert(new File(log.logPath.toUri).mkdirs())
 
     val commitInfoFile = CommitInfo(
-      Some(0),
-      new Timestamp(1540415658000L),
-      Some("user_0"),
-      Some("username_0"),
-      "WRITE",
-      Map("test" -> "\"test\""),
-      Some(JobInfo("job_id_0", "job_name_0", "run_id_0", "job_owner_0", "trigger_type_0")),
-      Some(NotebookInfo("notebook_id_0")),
-      Some("cluster_id_0"),
-      Some(-1),
-      Some("default"),
-      Some(true),
-      Some(Map("test" -> "test")),
-      Some("foo")
+      version = Some(0L),
+      timestamp = new Timestamp(1540415658000L),
+      userId = Some("user_0"),
+      userName = Some("username_0"),
+      operation = "WRITE",
+      operationParameters = Map("test" -> "\"test\""),
+      job = Some(JobInfo("job_id_0", "job_name_0", "run_id_0", "job_owner_0", "trigger_type_0")),
+      notebook = Some(NotebookInfo("notebook_id_0")),
+      clusterId = Some("cluster_id_0"),
+      readVersion = Some(-1L),
+      isolationLevel = Some("default"),
+      isBlindAppend = Some(true),
+      operationMetrics = Some(Map("test" -> "test")),
+      userMetadata = Some("foo"),
+      tags = Some(Map("test" -> "test")),
+      engineInfo = Some("OSS")
     )
 
     val addFile = AddFile("abc", Map.empty, 1, 1, true)
@@ -531,6 +532,63 @@ class GoldenTables extends QueryTest with SharedSparkSession {
     writeDataWithSchema(tablePath, data, schema)
   }
 
+  /** TEST: DeltaDataReaderSuite > data reader can read partition values */
+  generateGoldenTable("data-reader-partition-values") { tablePath =>
+    def createRow(i: Int): Row = {
+      Row(i, i.longValue, i.toByte, i.shortValue, i % 2 == 0, i.floatValue, i.doubleValue,
+        i.toString, "null", java.sql.Date.valueOf("2021-09-08"),
+        java.sql.Timestamp.valueOf("2021-09-08 11:11:11"), new JBigDecimal(i),
+        Array(Row(i), Row(i), Row(i)),
+        Row(i.toString, i.toString, Row(i, i.toLong)),
+        i.toString)
+    }
+
+    def createRowWithNullPartitionValues(): Row = {
+      Row(
+        // partition values
+        null, null, null, null, null, null, null, null, null, null, null, null,
+        // data values
+        Array(Row(2), Row(2), Row(2)),
+        Row("2", "2", Row(2, 2L)),
+        "2")
+    }
+
+    val schema = new StructType()
+      // partition fields
+      .add("as_int", IntegerType)
+      .add("as_long", LongType)
+      .add("as_byte", ByteType)
+      .add("as_short", ShortType)
+      .add("as_boolean", BooleanType)
+      .add("as_float", FloatType)
+      .add("as_double", DoubleType)
+      .add("as_string", StringType)
+      .add("as_string_lit_null", StringType)
+      .add("as_date", DateType)
+      .add("as_timestamp", TimestampType)
+      .add("as_big_decimal", DecimalType(1, 0))
+      // data fields
+      .add("as_list_of_records", ArrayType(new StructType().add("val", IntegerType)))
+      .add("as_nested_struct", new StructType()
+        .add("aa", StringType)
+        .add("ab", StringType)
+        .add("ac", new StructType()
+          .add("aca", IntegerType)
+          .add("acb", LongType)
+        )
+      )
+      .add("value", StringType)
+
+    val data = (0 until 2).map(createRow) :+ createRowWithNullPartitionValues()
+
+    val df = spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+    df.write
+      .format("delta")
+      .partitionBy("as_int", "as_long", "as_byte", "as_short", "as_boolean", "as_float",
+        "as_double", "as_string", "as_string_lit_null", "as_date", "as_timestamp", "as_big_decimal")
+      .save(tablePath)
+  }
+
   /** TEST: DeltaDataReaderSuite > read - date types */
   Seq("UTC", "Iceland", "PST", "America/Los_Angeles", "Etc/GMT+9", "Asia/Beirut",
     "JST").foreach { timeZoneId =>
@@ -667,6 +725,29 @@ class GoldenTables extends QueryTest with SharedSparkSession {
       Seq(row).toDF().write.format("delta").mode("append").partitionBy("_2").save(tablePath)
     }
   }
+
+  /** TEST: DeltaDataReaderSuite > #124: decimal decode bug */
+  generateGoldenTable("124-decimal-decode-bug") { tablePath =>
+    val data = Seq(Row(new JBigDecimal(1000000)))
+    val schema = new StructType().add("large_decimal", DecimalType(10, 0))
+    writeDataWithSchema(tablePath, data, schema)
+  }
+
+  /** TEST: DeltaDataReaderSuite > #125: iterator bug */
+  generateGoldenTable("125-iterator-bug") { tablePath =>
+    val datas = Seq(
+      Seq(),
+      Seq(1),
+      Seq(2), Seq(),
+      Seq(3), Seq(), Seq(),
+      Seq(4), Seq(), Seq(), Seq(),
+      Seq(5)
+    )
+    datas.foreach { data =>
+      data.toDF("col1").write.format("delta").mode("append").save(tablePath)
+    }
+  }
+
   generateGoldenTable("deltatbl-not-allow-write", createHiveGoldenTableFile) { tablePath =>
     val data = (0 until 10).map(x => (x, s"foo${x % 2}"))
     data.toDF("a", "b").write.format("delta").save(tablePath)
