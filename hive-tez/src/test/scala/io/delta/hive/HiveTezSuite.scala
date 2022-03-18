@@ -1,5 +1,5 @@
 /*
- * Copyright (2020) The Delta Lake Project Authors.
+ * Copyright (2020-present) The Delta Lake Project Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import org.apache.tez.dag.api.TezConfiguration
 import org.apache.tez.runtime.library.api.TezRuntimeConfiguration
 import org.apache.tez.test.MiniTezCluster
 
+/** This file is duplicated in hive-mr and hive2-mr. Please update both when modifying this file. */
 class HiveTezSuite extends HiveConnectorTest {
 
   override val engine: String = "tez"

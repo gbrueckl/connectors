@@ -1,5 +1,5 @@
 /*
- * Copyright (2020) The Delta Lake Project Authors.
+ * Copyright (2020-present) The Delta Lake Project Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,33 +13,52 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package io.delta.standalone.actions;
 
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 /**
  * Represents an action that adds a new file to the table. The path of a file acts as the primary
  * key for the entry in the set of files.
- *
+ * <p>
  * Note: since actions within a given Delta file are not guaranteed to be applied in order, it is
  * not valid for multiple file operations with the same path to exist in a single version.
  *
- * @see  <a href="https://github.com/delta-io/delta/blob/master/PROTOCOL.md">Delta Transaction Log Protocol</a>
+ * @see  <a href="https://github.com/delta-io/delta/blob/master/PROTOCOL.md#add-file-and-remove-file">Delta Transaction Log Protocol: Add File and Remove File</a>
  */
 public final class AddFile implements FileAction {
+    @Nonnull
     private final String path;
+
+    @Nonnull
     private final Map<String, String> partitionValues;
+
     private final long size;
+
     private final long modificationTime;
+
     private final boolean dataChange;
+
+    @Nullable
     private final String stats;
+
+    @Nullable
     private final Map<String, String> tags;
 
-    public AddFile(String path, Map<String, String> partitionValues, long size,
-                   long modificationTime, boolean dataChange, String stats,
-                   Map<String, String> tags) {
+    public AddFile(
+            @Nonnull String path,
+            @Nonnull Map<String, String> partitionValues,
+            long size,
+            long modificationTime,
+            boolean dataChange,
+            @Nullable String stats,
+            @Nullable Map<String, String> tags) {
         this.path = path;
         this.partitionValues = partitionValues;
         this.size = size;
@@ -50,11 +69,49 @@ public final class AddFile implements FileAction {
     }
 
     /**
+     * @return the corresponding {@link RemoveFile} for this file, instantiated with
+     *         {@code deletionTimestamp =} {@link System#currentTimeMillis()}
+     */
+    @Nonnull
+    public RemoveFile remove() {
+        return remove(System.currentTimeMillis(), dataChange);
+    }
+
+    /**
+     * @return the corresponding {@link RemoveFile} for this file, instantiated with the given
+     *         {@code deletionTimestamp}
+     */
+    @Nonnull
+    public RemoveFile remove(long deletionTimestamp) {
+        return remove(deletionTimestamp, dataChange);
+    }
+
+    /**
+     * @return the corresponding {@link RemoveFile} for this file, instantiated with the given
+     *         {@code dataChange} flag
+     */
+    @Nonnull
+    public RemoveFile remove(boolean dataChange) {
+        return remove(System.currentTimeMillis(), dataChange);
+    }
+
+    /**
+     * @return the corresponding {@link RemoveFile} for this file, instantiated with the given
+     *         {@code deletionTimestamp} value and {@code dataChange} flag
+     */
+    @Nonnull
+    public RemoveFile remove(long deletionTimestamp, boolean dataChange) {
+        return new RemoveFile(path, Optional.of(deletionTimestamp), dataChange, true,
+            partitionValues, Optional.of(size), tags);
+    }
+
+    /**
      * @return the relative path or the absolute path that should be added to the table. If it's a
      *         relative path, it's relative to the root of the table. Note: the path is encoded and
      *         should be decoded by {@code new java.net.URI(path)} when using it.
      */
     @Override
+    @Nonnull
     public String getPath() {
         return path;
     }
@@ -65,6 +122,7 @@ public final class AddFile implements FileAction {
      *         An empty string for any type translates to a null partition value.
      * @see <a href="https://github.com/delta-io/delta/blob/master/PROTOCOL.md#Partition-Value-Serialization" target="_blank">Delta Protocol Partition Value Serialization</a>
      */
+    @Nonnull
     public Map<String, String> getPartitionValues() {
         return Collections.unmodifiableMap(partitionValues);
     }
@@ -98,6 +156,7 @@ public final class AddFile implements FileAction {
      * @return statistics (for example: count, min/max values for columns)
      *         about the data in this file as serialized JSON
      */
+    @Nullable
     public String getStats() {
         return stats;
     }
@@ -105,8 +164,9 @@ public final class AddFile implements FileAction {
     /**
      * @return an unmodifiable {@code Map} containing metadata about this file
      */
+    @Nullable
     public Map<String, String> getTags() {
-        return Collections.unmodifiableMap(tags);
+        return tags != null ? Collections.unmodifiableMap(tags) : null;
     }
 
     @Override
@@ -129,7 +189,7 @@ public final class AddFile implements FileAction {
     }
 
     /**
-     * @return a new {@code AddFile.Builder}
+     * @return a new {@link AddFile.Builder}
      */
     public static Builder builder(String path, Map<String, String> partitionValues, long size,
                                   long modificationTime, boolean dataChange) {
@@ -137,16 +197,18 @@ public final class AddFile implements FileAction {
     }
 
     /**
-     * Builder class for AddFile. Enables construction of AddFile object with default values.
+     * Builder class for {@link AddFile}. Enables construction of {@link AddFile}s with default
+     * values.
      */
-    public static class Builder {
+    public static final class Builder {
         // required AddFile fields
         private final String path;
         private final Map<String, String> partitionValues;
         private final long size;
         private final long modificationTime;
         private final boolean dataChange;
-        //  optional AddFile fields
+
+        // optional AddFile fields
         private String stats;
         private Map<String, String> tags;
 
@@ -170,7 +232,10 @@ public final class AddFile implements FileAction {
         }
 
         /**
-         * @return a new {@code AddFile} with the same properties as {@code this}
+         * Builds an {@link AddFile} using the provided parameters. If a parameter is not provided
+         * its default values is used.
+         *
+         * @return a new {@link AddFile} with the properties added to the builder
          */
         public AddFile build() {
             AddFile addFile = new AddFile(this.path, this.partitionValues, this.size,

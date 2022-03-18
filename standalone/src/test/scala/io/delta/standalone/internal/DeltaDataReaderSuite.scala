@@ -1,5 +1,5 @@
 /*
- * Copyright (2020) The Delta Lake Project Authors.
+ * Copyright (2020-present) The Delta Lake Project Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,20 +18,23 @@ package io.delta.standalone.internal
 
 import java.math.{BigDecimal => JBigDecimal}
 import java.sql.Timestamp
-import java.util.{TimeZone, List => JList, Map => JMap}
+import java.util.{List => JList, Map => JMap, TimeZone}
 import java.util.Arrays.{asList => asJList}
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable.ListBuffer
 
-import io.delta.standalone.data.{RowRecord => JRowRecord}
+import org.apache.hadoop.conf.Configuration
+import org.scalatest.FunSuite
+
 import io.delta.standalone.DeltaLog
+import io.delta.standalone.data.{CloseableIterator, RowRecord => JRowRecord}
+import io.delta.standalone.types._
+
+import io.delta.standalone.internal.data.RowParquetRecordImpl
 import io.delta.standalone.internal.sources.StandaloneHadoopConf
 import io.delta.standalone.internal.util.DataTypeParser
 import io.delta.standalone.internal.util.GoldenTableUtils._
-import io.delta.standalone.types._
-import org.apache.hadoop.conf.Configuration
-
-import org.scalatest.FunSuite
 
 /**
  * Instead of using Spark in this project to WRITE data and log files for tests, we have
@@ -43,7 +46,6 @@ import org.scalatest.FunSuite
  * been generated.
  */
 class DeltaDataReaderSuite extends FunSuite {
-  // scalastyle:on funsuite
 
   test("read - primitives") {
     withLogForGoldenTable("data-reader-primitives") { log =>
@@ -280,7 +282,11 @@ class DeltaDataReaderSuite extends FunSuite {
     withLogForGoldenTable("data-reader-primitives") { log =>
       val recordIter = log.snapshot().open()
       assertThrows[ClassCastException] {
-        val row = recordIter.next()
+        var row = recordIter.next()
+        while (row.isNullAt("as_big_decimal")) {
+          // Skip null values as we don't do type check for null values.
+          row = recordIter.next()
+        }
         row.getString("as_big_decimal")
       }
     }
@@ -302,16 +308,65 @@ class DeltaDataReaderSuite extends FunSuite {
     }
   }
 
-  def checkDataTypeToJsonFromJson(dataType: DataType): Unit = {
+  test("data reader can read partition values") {
+    withLogForGoldenTable("data-reader-partition-values") { log =>
+      val snapshot = log.update()
+      val partitionColumns = snapshot.getMetadata.getPartitionColumns.asScala.toSet
+      val recordIter = snapshot.open()
+
+      if (!recordIter.hasNext) fail(s"No row record")
+
+      while (recordIter.hasNext) {
+        val row = recordIter.next()
+        assert(row.getLength == 15)
+
+        assert(!row.isNullAt("value"))
+
+        if (row.getString("value") == "2") { // null partition columns
+          for (fieldName <- row.getSchema.getFieldNames.filter(partitionColumns.contains)) {
+            assert(row.isNullAt(fieldName))
+          }
+        } else {
+          doMatch(row, row.getString("value").toInt);
+        }
+      }
+    }
+  }
+
+  private def doMatch(row: JRowRecord, i: Int): Unit = {
+    assert(row.getInt("as_int") == i)
+    assert(row.getLong("as_long") == i.longValue)
+    assert(row.getByte("as_byte") == i.toByte)
+    assert(row.getShort("as_short") == i.shortValue)
+    assert(row.getBoolean("as_boolean") == (i % 2 == 0))
+    assert(row.getFloat("as_float") == i.floatValue)
+    assert(row.getDouble("as_double") == i.doubleValue)
+    assert(row.getString("as_string") == i.toString)
+    assert(row.getString("as_string_lit_null") == "null")
+    assert(row.getDate("as_date") == java.sql.Date.valueOf("2021-09-08"))
+    assert(row.getTimestamp("as_timestamp") == java.sql.Timestamp.valueOf("2021-09-08 11:11:11"))
+    assert(row.getBigDecimal("as_big_decimal") == new JBigDecimal(i))
+
+    val recordsList = row.getList[JRowRecord]("as_list_of_records")
+    assert(recordsList.get(0).asInstanceOf[RowParquetRecordImpl].partitionValues.isEmpty)
+    assert(recordsList.get(0).getInt("val") == i)
+
+    val nestedStruct = row.getRecord("as_nested_struct")
+    assert(nestedStruct.asInstanceOf[RowParquetRecordImpl].partitionValues.isEmpty)
+    val nestedNestedStruct = nestedStruct.getRecord("ac")
+    assert(nestedNestedStruct.asInstanceOf[RowParquetRecordImpl].partitionValues.isEmpty)
+  }
+
+  private def checkDataTypeToJsonFromJson(dataType: DataType): Unit = {
     test(s"DataType to Json and from Json - $dataType") {
-      assert(DataTypeParser.fromJson(dataType.toJson()) === dataType)
+      assert(DataTypeParser.fromJson(dataType.toJson) === dataType)
     }
 
     test(s"DataType inside StructType to Json and from Json - $dataType") {
       val field1 = new StructField("foo", dataType, true)
       val field2 = new StructField("bar", dataType, true)
       val struct = new StructType(Array(field1, field2))
-      assert(DataTypeParser.fromJson(struct.toJson()) === struct)
+      assert(DataTypeParser.fromJson(struct.toJson) === struct)
     }
   }
 
@@ -336,4 +391,61 @@ class DeltaDataReaderSuite extends FunSuite {
       new IntegerType,
       new ArrayType(new DoubleType, true),
       false))
+
+  test("toJson fromJson for field metadata") {
+    val emptyMetadata = FieldMetadata.builder().build()
+    val singleStringMetadata = FieldMetadata.builder().putString("test", "test_value").build()
+    val singleBooleanMetadata = FieldMetadata.builder().putBoolean("test", true).build()
+    val singleIntegerMetadata = FieldMetadata.builder().putLong("test", 2L).build()
+    val singleDoubleMetadata = FieldMetadata.builder().putDouble("test", 2.0).build()
+    val singleMapMetadata = FieldMetadata.builder().putMetadata("test_outside",
+      FieldMetadata.builder().putString("test_inside", "test_inside_value").build()).build()
+    val singleListMetadata = FieldMetadata.builder().putLongArray("test", Array(0L, 1L, 2L)).build()
+    val multipleEntriesMetadata = FieldMetadata.builder().putString("test", "test_value")
+      .putDouble("test", 2.0).putLongArray("test", Array(0L, 1L, 2L)).build()
+
+    val field_array = Array(
+      new StructField("emptyMetadata", new BooleanType, true, emptyMetadata),
+      new StructField("singleStringMetadata", new BooleanType, true, singleStringMetadata),
+      new StructField("singleBooleanMetadata", new BooleanType, true, singleBooleanMetadata),
+      new StructField("singleIntegerMetadata", new BooleanType, true, singleIntegerMetadata),
+      new StructField("singleDoubleMetadata", new BooleanType, true, singleDoubleMetadata),
+      new StructField("singleMapMetadata", new BooleanType, true, singleMapMetadata),
+      new StructField("singleListMetadata", new BooleanType, true, singleListMetadata),
+      new StructField("multipleEntriesMetadata", new BooleanType, true, multipleEntriesMetadata))
+    val struct = new StructType(field_array)
+    assert(struct == DataTypeParser.fromJson(struct.toJson()))
+  }
+
+  test("#124: getBigDecimal decode correctly for LongValue") {
+    withLogForGoldenTable("124-decimal-decode-bug") { log =>
+      val recordIter = log.snapshot().open()
+      val row = recordIter.next()
+      assert(row.getBigDecimal("large_decimal") == new JBigDecimal(1000000))
+      assert(!recordIter.hasNext)
+    }
+  }
+
+  // scalastyle:off line.size.limit
+  test("#125: CloseableParquetDataIterator should not stop iteration when processing an empty file") {
+    // scalastyle:on line.size.limit
+    withLogForGoldenTable("125-iterator-bug") { log =>
+      var datas = new ListBuffer[Int]()
+      var dataIter: CloseableIterator[JRowRecord] = null
+      try {
+        dataIter = log.update().open()
+        while (dataIter.hasNext) {
+          datas += dataIter.next().getInt("col1")
+        }
+
+        assert(datas.length == 5)
+        assert(datas.toSet == Set(1, 2, 3, 4, 5))
+      } finally {
+        if (null != dataIter) {
+          dataIter.close()
+        }
+      }
+    }
+  }
 }
+

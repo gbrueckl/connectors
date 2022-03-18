@@ -28,7 +28,7 @@
 // scalastyle:on
 
 /*
- * Copyright (2020) The Delta Lake Project Authors.
+ * Copyright (2020-present) The Delta Lake Project Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,7 +46,6 @@
 package io.delta.standalone.internal.data
 
 import java.sql.{Date, Timestamp}
-import java.util
 import java.util.TimeZone
 
 import scala.collection.JavaConverters._
@@ -56,8 +55,9 @@ import scala.reflect.ClassTag
 import com.github.mjakubowski84.parquet4s._
 
 import io.delta.standalone.data.{RowRecord => RowParquetRecordJ}
-import io.delta.standalone.internal.exception.DeltaErrors
 import io.delta.standalone.types._
+
+import io.delta.standalone.internal.exception.DeltaErrors
 
 /**
  * Scala implementation of Java interface [[RowParquetRecordJ]].
@@ -65,11 +65,13 @@ import io.delta.standalone.types._
  * @param record the internal parquet4s record
  * @param schema the intended schema for this record
  * @param timeZone the timeZone as which time-based data will be read
+ * @param partitionValues the deserialized partition values of current record
  */
 private[internal] case class RowParquetRecordImpl(
-    private val record: RowParquetRecord,
-    private val schema: StructType,
-    private val timeZone: TimeZone) extends RowParquetRecordJ {
+    record: RowParquetRecord,
+    schema: StructType,
+    timeZone: TimeZone,
+    partitionValues: Map[String, Any]) extends RowParquetRecordJ {
 
   /**
    * Needed to decode values. Constructed with the `timeZone` to properly decode time-based data.
@@ -82,9 +84,15 @@ private[internal] case class RowParquetRecordImpl(
 
   override def getSchema: StructType = schema
 
-  override def getLength: Int = record.length
+  override def getLength: Int = record.length + partitionValues.size
 
-  override def isNullAt(fieldName: String): Boolean = record.get(fieldName) == NullValue
+  override def isNullAt(fieldName: String): Boolean = {
+    if (partitionValues.contains(fieldName)) { // is partition field
+      partitionValues(fieldName) == null
+    } else {
+      record.get(fieldName) == NullValue
+    }
+  }
 
   override def getInt(fieldName: String): Int = getAs[Int](fieldName)
 
@@ -113,9 +121,11 @@ private[internal] case class RowParquetRecordImpl(
 
   override def getRecord(fieldName: String): RowParquetRecordJ = getAs[RowParquetRecordJ](fieldName)
 
-  override def getList[T](fieldName: String): util.List[T] = getAs[util.List[T]](fieldName)
+  override def getList[T](fieldName: String): java.util.List[T] =
+    getAs[java.util.List[T]](fieldName)
 
-  override def getMap[K, V](fieldName: String): util.Map[K, V] = getAs[util.Map[K, V]](fieldName)
+  override def getMap[K, V](fieldName: String): java.util.Map[K, V] =
+    getAs[java.util.Map[K, V]](fieldName)
 
   ///////////////////////////////////////////////////////////////////////////
   // Decoding Helper Methods
@@ -133,6 +143,17 @@ private[internal] case class RowParquetRecordImpl(
    */
   private def getAs[T](fieldName: String): T = {
     val schemaField = schema.get(fieldName)
+
+    // Partition Field
+    if (partitionValues.contains(fieldName)) {
+      if (partitionValues(fieldName) == null && !schemaField.isNullable) {
+        throw DeltaErrors.nullValueFoundForNonNullSchemaField(fieldName, schema)
+      }
+
+      return partitionValues(fieldName).asInstanceOf[T]
+    }
+
+    // Data Field
     val parquetVal = record.get(fieldName)
 
     if (parquetVal == NullValue && !schemaField.isNullable) {
@@ -148,7 +169,7 @@ private[internal] case class RowParquetRecordImpl(
   }
 
   /**
-   * Decode the parquet `parqetVal` into the corresponding Scala type for `elemType`
+   * Decode the parquet `parquetVal` into the corresponding Scala type for `elemType`
    */
   private def decode(elemType: DataType, parquetVal: Value): Any = {
     val elemTypeName = elemType.getTypeName
@@ -163,7 +184,7 @@ private[internal] case class RowParquetRecordImpl(
     (elemType, parquetVal) match {
       case (x: ArrayType, y: ListParquetRecord) => decodeList(x.getElementType, y)
       case (x: MapType, y: MapParquetRecord) => decodeMap(x.getKeyType, x.getValueType, y)
-      case (x: StructType, y: RowParquetRecord) => RowParquetRecordImpl(y, x, timeZone)
+      case (x: StructType, y: RowParquetRecord) => RowParquetRecordImpl(y, x, timeZone, Map.empty)
       case _ =>
         throw new RuntimeException(s"Unknown non-primitive decode type $elemTypeName, $parquetVal")
     }
@@ -193,7 +214,9 @@ private[internal] case class RowParquetRecordImpl(
         }.asJava
       case x: StructType =>
         // List of records
-        listVal.map { case y: RowParquetRecord => RowParquetRecordImpl(y, x, timeZone) }.asJava
+        listVal.map {
+          case y: RowParquetRecord => RowParquetRecordImpl(y, x, timeZone, Map.empty)
+        }.asJava
       case _ => throw new RuntimeException(s"Unknown non-primitive list decode type $elemTypeName")
     }
   }
@@ -231,6 +254,7 @@ private[internal] case class RowParquetRecordImpl(
           case IntValue(int) => new java.math.BigDecimal(int)
           case DoubleValue(double) => BigDecimal.decimal(double).bigDecimal
           case FloatValue(float) => BigDecimal.decimal(float).bigDecimal
+          case LongValue(long) => new java.math.BigDecimal(long)
           case BinaryValue(binary) => Decimals.decimalFromBinary(binary).bigDecimal
           case _ => throw new RuntimeException(s"Unknown decimal decode type $value")
         }
@@ -265,7 +289,7 @@ private[internal] case class RowParquetRecordImpl(
         configuration: ValueCodecConfiguration): Seq[T] = {
       value match {
         case listRecord: ListParquetRecord =>
-          listRecord.map(elementCodec.decode(_, codecConf))
+          listRecord.map(elementCodec.decode(_, codecConf)).toSeq
         case binaryValue: BinaryValue if classTag.runtimeClass == classOf[Byte] =>
           binaryValue.value.getBytes.asInstanceOf[Seq[T]]
         case _ => throw new RuntimeException(s"Unknown list decode type $value")

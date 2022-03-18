@@ -1,5 +1,5 @@
 /*
- * Copyright (2020) The Delta Lake Project Authors.
+ * Copyright (2020-present) The Delta Lake Project Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,19 +13,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package io.delta.standalone.actions;
 
 import java.util.Objects;
 
 /** Represents the Databricks Job information that committed to the Delta table. */
-public class JobInfo implements Action {
+public class JobInfo {
     private final String jobId;
     private final String jobName;
     private final String runId;
     private final String jobOwnerId;
     private final String triggerType;
 
-    public JobInfo(String jobId, String jobName, String runId, String jobOwnerId, String triggerType) {
+    public JobInfo(
+            String jobId,
+            String jobName,
+            String runId,
+            String jobOwnerId,
+            String triggerType) {
         this.jobId = jobId;
         this.jobName = jobName;
         this.runId = runId;
@@ -71,14 +77,15 @@ public class JobInfo implements Action {
     }
 
     /**
-     * @return a new {@code JobInfo.Builder}
+     * @return a new {@link JobInfo.Builder}
      */
     public static Builder builder(String jobId) {
         return new Builder(jobId);
     }
 
     /**
-     * Builder class for JobInfo. Enables construction of JobInfo object with default values.
+     * Builder class for {@link JobInfo}. Enables construction of {@link JobInfo}s with default
+     * values.
      */
     public static class Builder {
         // required JobInfo fields
@@ -114,7 +121,10 @@ public class JobInfo implements Action {
         }
 
         /**
-         * @return a new {@code JobInfo} with the same properties as {@code this}
+         * Builds a {@link JobInfo} using the provided parameters. If a parameter is not provided
+         * its default values is used.
+         *
+         * @return a new {@link JobInfo} with the properties added to the builder
          */
         public JobInfo build() {
             JobInfo jobInfo = new JobInfo(this.jobId, this.jobName, this.runId, this.jobOwnerId,
