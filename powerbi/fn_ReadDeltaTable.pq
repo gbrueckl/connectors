@@ -8,6 +8,7 @@ let
 
     DeltaTableVersion = if DeltaTableOptions = null then null else Record.FieldOrDefault(DeltaTableOptions, "Version", null),
     PartitionFilterFunction = if DeltaTableOptions = null then (x) => true else if Record.FieldOrDefault(DeltaTableOptions, "PartitionFilterFunction", null) = null then (x) => true else Record.Field(DeltaTableOptions, "PartitionFilterFunction"),
+    StatsFilterFunction = if DeltaTableOptions = null then (x, y) => true else if Record.FieldOrDefault(DeltaTableOptions, "StatsFilterFunction", null) = null then (x, y) => true else Record.Field(DeltaTableOptions, "StatsFilterFunction"),
     UseFileBuffer = if DeltaTableOptions = null then false else if Record.FieldOrDefault(DeltaTableOptions, "UseFileBuffer", null) = null then false else Record.Field(DeltaTableOptions, "UseFileBuffer"),
     IterateFolderContent = if DeltaTableOptions = null then false else if Record.FieldOrDefault(DeltaTableOptions, "IterateFolderContent", null) = null then false else Record.Field(DeltaTableOptions, "IterateFolderContent"),
     TimeZoneOffset = if DeltaTableOptions = null then null else Record.FieldOrDefault(DeltaTableOptions, "TimeZoneOffset", null),
@@ -86,7 +87,10 @@ let
             Source = DeltaTableFolderContent_wFullPath,
             #"Filtered Rows" = Table.SelectRows(Source, each Text.Contains([Full_Path], Delimiter & "_delta_log" & Delimiter)),
             #"Added Version" = Table.AddColumn(#"Filtered Rows", "Version", each try Int64.From(Text.BeforeDelimiter([File_Name], ".")) otherwise -1, Int64.Type),
-            #"Filtered RequestedVersion" = if DeltaTableVersion = null then #"Added Version" else Table.SelectRows(#"Added Version", each [Version] <= DeltaTableVersion),
+            MaxVersion = Table.Group(#"Added Version", {}, {{"MaxVersion", each List.Max([Version]), type number}}){0}[MaxVersion],
+            #"Filtered RequestedVersion" = if DeltaTableVersion = null then #"Added Version" 
+        else if DeltaTableVersion < 0 then Table.SelectRows(#"Added Version", each [Version] <= MaxVersion + DeltaTableVersion)
+        else Table.SelectRows(#"Added Version", each [Version] <= DeltaTableVersion),
             BufferedTable = Table.Buffer(#"Filtered RequestedVersion"),
             BufferedContent = Table.TransformColumns(BufferedTable,{{"Content", Binary.Buffer}})
         in
@@ -184,7 +188,8 @@ let
             #"Expanded fields" = Table.ExpandRecordColumn(#"Expanded fieldList", "fields", {"name", "type", "nullable", "metadata"}, {"name", "type", "nullable", "metadata"}),
             #"Added isPartitionedBy" = Table.Buffer(Table.AddColumn(#"Expanded fields", "isPartitionedBy", each List.Contains([partitionColumns], [name]), Logical.Type)),
             #"Added PBI_DataType" = Table.AddColumn(#"Added isPartitionedBy", "PBI_DataType", 
-        each if [type] = "string" then [PBI_DataType=Text.Type, PBI_Text="Text.Type", PBI_Transformation=Text.From]
+        each if Value.Is([type], type record) then [PBI_DataType=Any.Type, PBI_Text="Any.Type", PBI_Transformation=(x) as any => x]
+        else if [type] = "string" then [PBI_DataType=Text.Type, PBI_Text="Text.Type", PBI_Transformation=Text.From]
         else if [type] = "long" then [PBI_DataType=Int64.Type, PBI_Text="Int64.Type", PBI_Transformation=Int64.From]
         else if [type] = "integer" then [PBI_DataType=Int32.Type, PBI_Text="Int32.Type", PBI_Transformation=Int32.From]
         else if [type] = "short" then [PBI_DataType=Int16.Type, PBI_Text="Int16.Type", PBI_Transformation=Int16.From]
@@ -208,6 +213,17 @@ let
         in
             #"Buffered Fields",
 
+        fn_AddColumnsToTable = 
+        (cols as record, tbl as table) as table =>
+        let 
+            colName = List.First(Record.FieldNames(cols)),
+            cols_new = Record.RemoveFields(cols, colName),
+            tbl_new = Table.AddColumn(tbl, colName, (x) => Record.Field(cols, colName), Value.Type(Record.Field(cols, colName))),
+
+            ret = if Record.FieldCount(cols) = 0 then tbl else if Record.FieldCount(cols_new) = 0 then tbl_new else @fn_AddColumnsToTable(cols_new, tbl_new)
+        in
+            ret,
+
         #"Data" = 
         let
             Source = #"Logs ALL",
@@ -216,27 +232,36 @@ let
             #"Filtered Rows" = Table.SelectRows(#"Added file_name", each ([file_name] <> null)),
             #"Added partitionValuesTable" = Table.AddColumn(#"Filtered Rows", "partitionValuesTable", each if [add] <> null then if Value.Is(Record.Field([add], "partitionValues"), Record.Type) then Record.ToTable(Record.Field([add], "partitionValues")) else Table.RenameColumns(Record.Field([add], "partitionValues"), {"Key", "Name"}) else null, type nullable table),
             #"Added partitionValuesJSON" = Table.AddColumn(#"Added partitionValuesTable", "partitionValuesJSON", each Text.FromBinary(Json.FromValue([partitionValuesTable]))),
-            #"Grouped Rows1" = Table.Group(#"Added partitionValuesJSON", {"file_name"}, {{"partitionValuesJSON", each List.Max([partitionValuesJSON]), type nullable text}, {"isRelevant", each List.Sum([Counter]), type nullable text}}),
+            #"Added stats" = Table.AddColumn(#"Added partitionValuesJSON", "stats", each if [add] <> null then 
+        if Value.Is(Record.Field([add], "stats"), type text) 
+        then Record.Field([add], "stats") 
+        else "{}"
+        else null, type text),
+            #"Grouped Rows1" = Table.Group(#"Added stats", {"file_name"}, {{"partitionValuesJSON", each List.Max([partitionValuesJSON]), type nullable text}, {"stats", each List.Max([stats]), type nullable text}, {"isRelevant", each List.Sum([Counter]), type nullable text}}),
             #"Relevant Files" = Table.SelectRows(#"Grouped Rows1", each ([isRelevant] > 0)),
             #"Added partitionValuesTable2" = Table.AddColumn(#"Relevant Files", "partitionValuesTable", each try Table.FromRecords(Json.Document([partitionValuesJSON])) otherwise null),
             #"Added partitionValuesRecord" = Table.AddColumn(#"Added partitionValuesTable2", "partitionValuesRecord", each Record.TransformFields(Record.FromTable([partitionValuesTable]), Table.SelectRows(#"metadata_columns", each [isPartitionedBy] = true)[ColumnTransformation]), Expression.Evaluate("type [" & Text.Combine(Table.SelectRows(#"metadata_columns", each [isPartitionedBy] = true)[TableDataType], ", ") & "]", PQ_DataTypes)),
-            #"Filtered Rows1" = Table.SelectRows(#"Added partitionValuesRecord", each PartitionFilterFunction([partitionValuesRecord])),
-            #"Expanded partitionValuesRecord" = Table.ExpandRecordColumn(#"Filtered Rows1", "partitionValuesRecord", Table.SelectRows(#"metadata_columns", each [isPartitionedBy] = true)[name]),
-            #"Added Full_Path" = Table.AddColumn(#"Expanded partitionValuesRecord", "Full_Path", each Text.Replace(DeltaTablePath & Text.Replace([file_name], "=", "%3D"), "/", Delimiter), Text.Type),
-            #"Removed Columns3" = Table.RemoveColumns(#"Added Full_Path",{"file_name", "partitionValuesJSON", "isRelevant", "partitionValuesTable"}),
-            #"Buffered RelevantFiles" = Table.Buffer(#"Removed Columns3"),
+            #"Filtered PartitionValues" = Table.SelectRows(#"Added partitionValuesRecord", each PartitionFilterFunction([partitionValuesRecord])),
+            #"Expanded partitionValuesRecord" = Table.ExpandRecordColumn(#"Filtered PartitionValues", "partitionValuesRecord", Table.SelectRows(#"metadata_columns", each [isPartitionedBy] = true)[name]),
+            #"Parse stats to JSON" = Table.AddColumn(#"Expanded partitionValuesRecord", "JSON", each Json.Document([stats])),
+            #"Expanded MinMaxValues" = Table.ExpandRecordColumn(#"Parse stats to JSON", "JSON", {"minValues", "maxValues"}, {"minValues", "maxValues"}),
+            #"Filtered MinMaxValues" = Table.SelectRows(#"Expanded MinMaxValues", each StatsFilterFunction([minValues], [maxValues])),
+            #"Added Full_Path" = Table.AddColumn(#"Filtered MinMaxValues", "Full_Path", each Text.Replace(DeltaTablePath & Text.Replace([file_name], "=", "%3D"), "/", Delimiter), Text.Type),
+            #"Removed FilteringColumns" = Table.RemoveColumns(#"Added Full_Path",{"file_name", "partitionValuesJSON", "isRelevant", "partitionValuesTable", "stats", "minValues", "maxValues"}),
+            #"Buffered RelevantFiles" = Table.Buffer(#"Removed FilteringColumns"),
             #"Merged Queries" = Table.NestedJoin(#"Buffered RelevantFiles", {"Full_Path"}, DeltaTableFolderContent_wFullPath, {"Full_Path"}, "DeltaTable Folder", JoinKind.Inner),
-            #"Removed Columns" = Table.RemoveColumns(#"Merged Queries",{"Full_Path"}),
-            #"Expanded DeltaTable Folder" = Table.ExpandTableColumn(#"Removed Columns", "DeltaTable Folder", {"Content"}, {"Content"}),
+            #"Removed Full_Path" = Table.RemoveColumns(#"Merged Queries",{"Full_Path"}),
+            #"Expanded DeltaTable Folder" = Table.ExpandTableColumn(#"Removed Full_Path", "DeltaTable Folder", {"Content"}, {"Content"}),
             BufferFile = if UseFileBuffer then Table.TransformColumns(#"Expanded DeltaTable Folder",{{"Content", Binary.Buffer}}) else #"Expanded DeltaTable Folder",
-            #"Added Custom1" = Table.AddColumn(BufferFile, "Data", each Parquet.Document([Content]), Expression.Evaluate("type table [" & Text.Combine(metadata_columns[TableDataType], ", ") & "]", PQ_DataTypes)),
-            #"Removed Columns1" = Table.RemoveColumns(#"Added Custom1",{"Content"}),
-            #"Expanded Data" = Table.ExpandTableColumn(#"Removed Columns1", "Data", Table.SelectRows(metadata_columns, each not [isPartitionedBy])[name]),
+            #"Read Parquet" = Table.AddColumn(BufferFile, "Data", each Parquet.Document([Content]), type table),
+            #"Removed Binary Column" = Table.RemoveColumns(#"Read Parquet",{"Content"}),
+            #"Combine Partition Values" = Table.CombineColumnsToRecord(#"Removed Binary Column", "cols", List.RemoveItems(Table.ColumnNames(#"Removed Binary Column"), {"Data"})),
+            #"Expanded Data" = Table.Combine(Table.TransformRows(#"Combine Partition Values", each fn_AddColumnsToTable(_[cols], _[Data]))),
             #"Changed Type" = Table.TransformColumns(#"Expanded Data",Table.SelectRows(metadata_columns, each [type] = "timestamp")[ColumnTransformation]),
-            #"Reordered Columns" = Table.ReorderColumns(if TimeZoneOffset = null then #"Expanded Data" else #"Changed Type", metadata_columns[name])
+            #"Table with TimeZoneOffset" = if TimeZoneOffset = null then #"Expanded Data" else #"Changed Type",
+            #"Reordered Columns" = Table.ReorderColumns(#"Table with TimeZoneOffset", Table.SelectRows(metadata_columns, each _[type] <> "null")[name])
         in
             #"Reordered Columns"
-
     in 
         #"Data",
 
