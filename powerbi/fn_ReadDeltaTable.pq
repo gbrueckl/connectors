@@ -188,23 +188,27 @@ let
             #"Expanded fields" = Table.ExpandRecordColumn(#"Expanded fieldList", "fields", {"name", "type", "nullable", "metadata"}, {"name", "type", "nullable", "metadata"}),
             #"Added isPartitionedBy" = Table.Buffer(Table.AddColumn(#"Expanded fields", "isPartitionedBy", each List.Contains([partitionColumns], [name]), Logical.Type)),
             #"Added PBI_DataType" = Table.AddColumn(#"Added isPartitionedBy", "PBI_DataType", 
-        each if Value.Is([type], type record) then [PBI_DataType=Any.Type, PBI_Text="Any.Type", PBI_Transformation=(x) as any => x]
-        else if [type] = "string" then [PBI_DataType=Text.Type, PBI_Text="Text.Type", PBI_Transformation=Text.From]
-        else if [type] = "long" then [PBI_DataType=Int64.Type, PBI_Text="Int64.Type", PBI_Transformation=Int64.From]
-        else if [type] = "integer" then [PBI_DataType=Int32.Type, PBI_Text="Int32.Type", PBI_Transformation=Int32.From]
-        else if [type] = "short" then [PBI_DataType=Int16.Type, PBI_Text="Int16.Type", PBI_Transformation=Int16.From]
-        else if [type] = "byte" then [PBI_DataType=Int8.Type, PBI_Text="Int8.Type", PBI_Transformation=Int8.From]
-        else if [type] = "float" then [PBI_DataType=Single.Type, PBI_Text="Single.Type", PBI_Transformation=Single.From]
-        else if [type] = "double" then [PBI_DataType=Double.Type, PBI_Text="Double.Type", PBI_Transformation=Double.From]
-        else if [type] = "string" then [PBI_DataType=Text.Type, PBI_Text="Text.Type", PBI_Transformation=Text.From]
-        else if [type] = "date" then [PBI_DataType=Date.Type, PBI_Text="Date.Type", PBI_Transformation=Date.From]
-        else if [type] = "timestamp" and TimeZoneOffset = null then [PBI_DataType=DateTime.Type, PBI_Text="DateTime.Type", PBI_Transformation=DateTime.From]
-        else if [type] = "timestamp" and TimeZoneOffset <> null then [PBI_DataType=DateTimeZone.Type, PBI_Text="DateTimeZone.Type", PBI_Transformation=(x) as nullable datetimezone => DateTime.AddZone(x + TimeZoneOffsetDuration, Duration.Hours(TimeZoneOffsetDuration), Duration.Minutes(TimeZoneOffsetDuration))]
-        else if [type] = "boolean" then [PBI_DataType=Logical.Type, PBI_Text="Logical.Type", PBI_Transformation=Logical.From]
-        else if [type] = "binary" then [PBI_DataType=Binary.Type, PBI_Text="Binary.Type", PBI_Transformation=Binary.From]
-        else if [type] = "null" then [PBI_DataType=Any.Type, PBI_Text="Any.Type", PBI_Transformation=(x) as any => x]
-        else if Text.StartsWith([type], "decimal") then [PBI_DataType=Number.Type, PBI_Text="Number.Type", PBI_Transformation=Number.From]
-        else [PBI_DataType=Any.Type, PBI_Text="Any.Type", PBI_Transformation=(x) as any => x]),
+                each if [type] = "string" then [PBI_DataType=Text.Type, PBI_Text="Text.Type", PBI_Transformation=Text.From]
+                else if [type] = "long" then [PBI_DataType=Int64.Type, PBI_Text="Int64.Type", PBI_Transformation=Int64.From]
+                else if [type] = "integer" then [PBI_DataType=Int32.Type, PBI_Text="Int32.Type", PBI_Transformation=Int32.From]
+                else if [type] = "short" then [PBI_DataType=Int16.Type, PBI_Text="Int16.Type", PBI_Transformation=Int16.From]
+                else if [type] = "byte" then [PBI_DataType=Int8.Type, PBI_Text="Int8.Type", PBI_Transformation=Int8.From]
+                else if [type] = "float" then [PBI_DataType=Single.Type, PBI_Text="Single.Type", PBI_Transformation=Single.From]
+                else if [type] = "double" then [PBI_DataType=Double.Type, PBI_Text="Double.Type", PBI_Transformation=Double.From]
+                else if [type] = "string" then [PBI_DataType=Text.Type, PBI_Text="Text.Type", PBI_Transformation=Text.From]
+                else if [type] = "date" then [PBI_DataType=Date.Type, PBI_Text="Date.Type", PBI_Transformation=Date.From]
+                else if [type] = "timestamp" and TimeZoneOffset = null then [PBI_DataType=DateTime.Type, PBI_Text="DateTime.Type", PBI_Transformation=DateTime.From]
+                else if [type] = "timestamp" and TimeZoneOffset <> null then [PBI_DataType=DateTimeZone.Type, PBI_Text="DateTimeZone.Type", PBI_Transformation=(x) as nullable datetimezone => DateTime.AddZone(x + TimeZoneOffsetDuration, Duration.Hours(TimeZoneOffsetDuration), Duration.Minutes(TimeZoneOffsetDuration))]
+                else if [type] = "boolean" then [PBI_DataType=Logical.Type, PBI_Text="Logical.Type", PBI_Transformation=Logical.From]
+                else if [type] = "binary" then [PBI_DataType=Binary.Type, PBI_Text="Binary.Type", PBI_Transformation=Binary.From]
+                else if [type] = "null" then [PBI_DataType=Any.Type, PBI_Text="Any.Type", PBI_Transformation=(x) as any => x]
+                else if Value.Is([type], Record.Type) then 
+                    if [type][type] = "struct" then [PBI_DataType=Record.Type, PBI_Text="Record.Type", PBI_Transformation=(x) as record => x]
+                    else if [type][type] = "array" then [PBI_DataType=List.Type, PBI_Text="List.Type", PBI_Transformation=(x) as list => x]
+                    else if [type][type] = "map" then [PBI_DataType=Table.Type, PBI_Text="Table.Type", PBI_Transformation=(x) as table => x]
+                    else [PBI_DataType=Any.Type, PBI_Text="Any.Type", PBI_Transformation=(x) as any => x]
+                else if Text.StartsWith([type], "decimal") then [PBI_DataType=Number.Type, PBI_Text="Number.Type", PBI_Transformation=Number.From]
+                else [PBI_DataType=Any.Type, PBI_Text="Any.Type", PBI_Transformation=(x) as any => x]),
             #"Expanded PBI_DataType" = Table.ExpandRecordColumn(#"Added PBI_DataType", "PBI_DataType", {"PBI_DataType", "PBI_Text", "PBI_Transformation"}, {"PBI_DataType", "PBI_Text", "PBI_Transformation"}),
             #"Added ChangeDataType" = Table.AddColumn(#"Expanded PBI_DataType", "ChangeDataType", each {[name], [PBI_DataType]}, type list),
             #"Added TableDataType" = Table.AddColumn(#"Added ChangeDataType", "TableDataType", each "#""" & [name] & """=" & (if [nullable] then "nullable " else "") & Text.From([PBI_Text]), type text),
@@ -243,9 +247,9 @@ let
             #"Added partitionValuesRecord" = Table.AddColumn(#"Added partitionValuesTable2", "partitionValuesRecord", each Record.TransformFields(Record.FromTable([partitionValuesTable]), Table.SelectRows(#"metadata_columns", each [isPartitionedBy] = true)[ColumnTransformation]), Expression.Evaluate("type [" & Text.Combine(Table.SelectRows(#"metadata_columns", each [isPartitionedBy] = true)[TableDataType], ", ") & "]", PQ_DataTypes)),
             #"Filtered PartitionValues" = Table.SelectRows(#"Added partitionValuesRecord", each PartitionFilterFunction([partitionValuesRecord])),
             #"Expanded partitionValuesRecord" = Table.ExpandRecordColumn(#"Filtered PartitionValues", "partitionValuesRecord", Table.SelectRows(#"metadata_columns", each [isPartitionedBy] = true)[name]),
-            #"Parse stats to JSON" = Table.AddColumn(#"Expanded partitionValuesRecord", "JSON", each Json.Document([stats])),
-            #"Expanded MinMaxValues" = Table.ExpandRecordColumn(#"Parse stats to JSON", "JSON", {"minValues", "maxValues"}, {"minValues", "maxValues"}),
-            #"Filtered MinMaxValues" = Table.SelectRows(#"Expanded MinMaxValues", each StatsFilterFunction([minValues], [maxValues])),
+            #"Parse stats to JSON" = Table.AddColumn(#"Expanded partitionValuesRecord", "JSON", each Json.Document([stats]), type [minValues=list, maxValues=list, numRecords=Int64.Type, nullCount=Int64.Type]),
+            #"Expanded Stats" = Table.ExpandRecordColumn(#"Parse stats to JSON", "JSON", {"minValues", "maxValues", "numRecords", "nullCount"}, {"minValues", "maxValues", "numRecords", "nullCount"}),
+            #"Filtered MinMaxValues" = Table.SelectRows(#"Expanded Stats", each StatsFilterFunction([minValues], [maxValues])),
             #"Added Full_Path" = Table.AddColumn(#"Filtered MinMaxValues", "Full_Path", each Text.Replace(DeltaTablePath & Text.Replace([file_name], "=", "%3D"), "/", Delimiter), Text.Type),
             #"Removed FilteringColumns" = Table.RemoveColumns(#"Added Full_Path",{"file_name", "partitionValuesJSON", "isRelevant", "partitionValuesTable", "stats", "minValues", "maxValues"}),
             #"Buffered RelevantFiles" = Table.Buffer(#"Removed FilteringColumns"),
@@ -256,12 +260,20 @@ let
             #"Read Parquet" = Table.AddColumn(BufferFile, "Data", each Parquet.Document([Content]), type table),
             #"Removed Binary Column" = Table.RemoveColumns(#"Read Parquet",{"Content"}),
             #"Combine Partition Values" = Table.CombineColumnsToRecord(#"Removed Binary Column", "cols", List.RemoveItems(Table.ColumnNames(#"Removed Binary Column"), {"Data"})),
-            #"Expanded Data" = Table.Combine(Table.TransformRows(#"Combine Partition Values", each fn_AddColumnsToTable(_[cols], _[Data]))),
-            #"Changed Type" = Table.TransformColumns(#"Expanded Data",Table.SelectRows(metadata_columns, each [type] = "timestamp")[ColumnTransformation]),
-            #"Table with TimeZoneOffset" = if TimeZoneOffset = null then #"Expanded Data" else #"Changed Type",
-            #"Reordered Columns" = Table.ReorderColumns(#"Table with TimeZoneOffset", Table.SelectRows(metadata_columns, each _[type] <> "null")[name])
+            #"Combine Files" = Table.Combine(Table.TransformRows(#"Combine Partition Values", each fn_AddColumnsToTable(_[cols], _[Data])), TableSchema),
+            #"Changed Type" = Table.TransformColumns(#"Combine Files",Table.SelectRows(metadata_columns, each [type] = "timestamp")[ColumnTransformation]),
+            #"Table with TimeZoneOffset" = if TimeZoneOffset = null then #"Combine Files" else #"Changed Type",
+            #"Reordered Columns" = Table.ReorderColumns(#"Table with TimeZoneOffset", metadata_columns[name]),
+
+            FinalDeltaTable = Table.View(
+                #"Reordered Columns", 
+                [
+                    GetType = () => TableSchema,
+                    GetRowCount = () => List.Sum(#"Expanded Stats"[numRecords])
+                ]
+            )
         in
-            #"Reordered Columns"
+            FinalDeltaTable
     in 
         #"Data",
 
