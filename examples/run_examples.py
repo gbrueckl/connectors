@@ -31,7 +31,6 @@ def delete_if_exists(path):
 
 def run_maven_proj(test_dir, example, version, maven_repo, scala_version):
     print(f"\n\n##### Running Maven verification {example} on standalone version {version} with scala version {scala_version}#####")
-    clear_artifact_cache()
     with WorkingDirectory(test_dir):
         cmd = ["mvn", "package", "exec:java", "-Dexec.cleanupDaemonThreads=false",
             f"-Dexec.mainClass=example.{example}",
@@ -39,14 +38,14 @@ def run_maven_proj(test_dir, example, version, maven_repo, scala_version):
             f"-Dstandalone.version={version}"]
         run_cmd(cmd, stream_output=True)
 
-def run_sbt_proj(test_dir, example, version, maven_repo, scala_version):
-    print(f"\n\n##### Running SBT verification {example} on standalone version {version} with scala version {scala_version}#####")
-    clear_artifact_cache()
+def run_sbt_proj(test_dir, proj, className, version, maven_repo, scala_version):
+    print(f"\n\n##### Running SBT verification {proj} on standalone version {version} with scala version {scala_version}#####")
+
     env = {"STANDALONE_VERSION": str(version)}
     if maven_repo:
         env["EXTRA_MAVEN_REPO"] = maven_repo
     with WorkingDirectory(test_dir):
-        cmd = ["build/sbt", f"++ {scala_version}", f"{example[0].lower() + example[1:]}/runMain example.{example}"]
+        cmd = ["build/sbt", f"++ {scala_version}", f"{proj}/runMain example.{className}"]
         run_cmd(cmd, stream_output=True, env=env)
 
 def clear_artifact_cache():
@@ -97,32 +96,55 @@ class WorkingDirectory(object):
 if __name__ == "__main__":
     """
     Script to run integration tests which are located in the examples directory.
-    call this by running "python3 run-integration-tests.py"
-    additionally the version can be provided as a command line argument.
+    Call this by running "python3 run-examples.py --version <version>", where <version> is the
+    Delta Connectors repo version to use.
+    
+    There are two version 'modes' you should use to run this file.
+    1. using published or staged jar: explicitly pass in the --version argument.
+    2. using locally-generated jar (e.g. 0.4.1-SNAPSHOT): explicitly pass in the --version argument
+       and --use-local-cache argument.
+       
+       In this mode, ensure that the local jar exists for all scala versions. You can generate it
+       by running the following commands in the root connectors folder.
+       
+       build/sbt '++2.11.12 publishM2'
+       build/sbt '++2.12.8 publishM2'
+       build/sbt '++2.13.8 publishM2'
     """
 
+    # get the version of the package
     root_dir = path.dirname(__file__)
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--version",
-        required=False,
-        default="0.3.0",
+        required=True,
         help="Delta Standalone version to use to run the integration tests")
     parser.add_argument(
         "--maven-repo",
         required=False,
         default=None,
         help="Additional Maven repo to resolve staged new release artifacts")
+    parser.add_argument(
+        "--use-local-cache",
+        required=False,
+        default=False,
+        action="store_true",
+        help="Don't clear Delta artifacts from ivy2 and mvn cache")
 
     args = parser.parse_args()
 
-    examples = [("convert-to-delta", "ConvertToDelta"),
-                ("hello-world", "HelloWorld")]
+    if not args.use_local_cache:
+        clear_artifact_cache()
 
-    for dir, c in examples:
-        run_maven_proj(path.join(root_dir, dir), c, args.version, args.maven_repo, "2.11")
-        run_maven_proj(path.join(root_dir, dir), c, args.version, args.maven_repo, "2.12")
+    examples = [("convert-to-delta", "convertToDelta", "ConvertToDelta"),
+                ("hello-world", "helloWorld", "HelloWorld")]
 
-        run_sbt_proj(root_dir, c, args.version, args.maven_repo, "2.11.12")
-        run_sbt_proj(root_dir, c, args.version, args.maven_repo, "2.12.8")
+    for dir, proj, className in examples:
+        run_maven_proj(path.join(root_dir, dir), className, args.version, args.maven_repo, "2.11")
+        run_maven_proj(path.join(root_dir, dir), className, args.version, args.maven_repo, "2.12")
+        run_maven_proj(path.join(root_dir, dir), className, args.version, args.maven_repo, "2.13")
+
+        run_sbt_proj(root_dir, proj, className, args.version, args.maven_repo, "2.11.12")
+        run_sbt_proj(root_dir, proj, className, args.version, args.maven_repo, "2.12.8")
+        run_sbt_proj(root_dir, proj, className, args.version, args.maven_repo, "2.13.8")
