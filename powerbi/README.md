@@ -11,9 +11,10 @@ The provided PowerQuery/M function allows you to read a Delta Lake table directl
     - Azure Data Lake Store Gen1 (tested)
     - AWS S3 (not yet tested)
     - Local Hadoop / HDFS (partially tested, check `UseFileBuffer` option)
-- Support for Partition Elimination to leverage the partitioning schema of the Delta Lake table
-- Support for File Pruning using file stats
+- Support for Partition Elimination to leverage the partitioning schema of the Delta Lake table ([details](#PartitionFilterFunction))
+- Support for File Pruning using file stats ([details](#StatsFilterFunction))
 - Support all simple and complex data types (struct, map, array, ...)
+- Added shortcut to read `COUNT` from `_delta_log` directly if possible
 - Support for Delta Lake time travel - e.g. `VERSION AS OF`
 	- also supports negative values for `VERSION AS OF` to easily access the previous version using a value of `-1`
 - Support for `TimeZoneOffset` to automatically convert all timestamps to a given timezone - e.g. `+2:00` 
