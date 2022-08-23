@@ -88,7 +88,8 @@ let
         let
             Source = DeltaTableFolderContent_wFullPath,
             #"Filtered Rows" = Table.SelectRows(Source, each Text.Contains([Full_Path], Delimiter & "_delta_log" & Delimiter)),
-            #"Added Version" = Table.AddColumn(#"Filtered Rows", "Version", each try Int64.From(Text.BeforeDelimiter([File_Name], ".")) otherwise -1, Int64.Type),
+            DeltaLogValidated = if Table.RowCount(#"Filtered Rows") = 0 then error "Mandatory folder " & Delimiter & "_delta_log" & Delimiter & " not found in the root of the file listing! Are you sure this is a Delta Lake table?" else #"Filtered Rows",
+            #"Added Version" = Table.AddColumn(DeltaLogValidated, "Version", each try Int64.From(Text.BeforeDelimiter([File_Name], ".")) otherwise -1, Int64.Type),
             MaxVersion = Table.Group(#"Added Version", {}, {{"MaxVersion", each List.Max([Version]), type number}}){0}[MaxVersion],
             #"Filtered RequestedVersion" = if DeltaTableVersion = null then #"Added Version" 
         else if DeltaTableVersion < 0 then Table.SelectRows(#"Added Version", each [Version] <= MaxVersion + DeltaTableVersion)
@@ -318,14 +319,24 @@ let
         Documentation.Source = "https://github.com/delta-io/connectors/blob/master/powerbi/fn_ReadDeltaTable.pq",
         Documentation.Version = "1.0",
         Documentation.Author = "Gerhard Brueckl, paiqo GmbH",
-        Documentation.Examples = {[Description =  "  ",
+        Documentation.Examples = {[Description =  "Reading Delta Lake table from Azure Blob Storage with Time-Travel",
             Code = "let
     Source = AzureStorage.Blobs(""https://gbadls01.blob.core.windows.net/public""),
     #""Filtered Rows"" = Table.SelectRows(Source, each Text.StartsWith([Name], ""powerbi_delta/FactInternetSales_part.delta/"")),
     DeltaTable = fn_ReadDeltaTable(#""Filtered Rows"", [Version=7])
 in
     DeltaTable",
-            Result = "#table( {""ProductKey"", ""OrderDateKey"", ""Value""}, { {""A"", ""2020-01-01"", 123} ,{""B"", ""2020-04-02"", 45} } )"]}]
+            Result = "#table( {""ProductKey"", ""OrderDateKey"", ""Value""}, { {""A"", ""2020-01-01"", 123} ,{""B"", ""2020-04-02"", 45} } )"],
+            
+            [Description =  "Reading Delta Lake table from Azure Data Lake Storage Gen2 with PartitionFilterFunction",
+            Code = "let
+    Source = AzureStorage.DataLake(""https://gbadls01.dfs.core.windows.net/public/powerbi_delta/FactInternetSales_part.delta"", [HierarchicalNavigation = false]),
+    DeltaTable = fn_ReadDeltaTable(Source, [PartitionFilterFunction=(x) => x[SalesTerritoryKey] = 3])
+in
+    DeltaTable",
+            Result = "#table( {""ProductKey"", ""OrderDateKey"", ""SalesTerritoryKey"", ""Value""}, { {""A"", ""2020-01-01"", 3, 123} ,{""B"", ""2020-04-02"", 3, 45} } )"]
+        }
+    ]
   
 in
     Value.ReplaceType(fn_ReadDeltaTable, Value.ReplaceMetadata(Value.Type(fn_ReadDeltaTable), documentation))

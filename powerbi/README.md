@@ -139,8 +139,15 @@ in
     DeltaTable
 ```
 
-If you are reading from Azure Data Lake Store **Gen2** with `[HierarchicalNavigation = true]` you can also use `IterateFolderContent=true` which may speed up overall performance - but this can vary from case to case so please test this on your own data first!
-
+## Reading from Azure Data Lake Store Gen2
+You can also read directly from an Azure Data Lake Store Gen2 using the snippet below. If you want/need to use `HierarchicalNavigation = true` you may add `IterateFolderContent=true` to the options of `fn_ReadDeltaTable`. This may speed up overall performance - but usually varies from case to case so please test this on your own data first!
+```
+let
+    Source = AzureStorage.DataLake("https://gbadls01.dfs.core.windows.net/public/powerbi_delta/DimProduct.delta", [HierarchicalNavigation = false]),
+    DeltaTable = fn_ReadDeltaTable(Source, [PartitionFilterFunction=(x) => x[Year] = 2021 and x[Month] = "Jan"])
+in
+    DeltaTable
+```
 
 
 # FAQ
